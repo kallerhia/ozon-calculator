@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Калькулятор прибыли продавца</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Макет: слева панель ввода как «накладная», справа — итог, сигналы, чек расходов и кривая прибыли от цены */
+:root {
+  --bg: #f3f4f7;
+  --surface: #ffffff;
+  --sunk: #eceef3;
+  --ink: #14161c;
+  --muted: #5b6273;
+  --line: #dde1e9;
+  --accent: #3157d4;
+  --accent-soft: #e6ecfd;
+  --gain: #17865a;
+  --gain-soft: #e1f3ea;
+  --loss: #cf4a24;
+  --loss-soft: #fbe8e1;
+  --warn: #a8700f;
+  --warn-soft: #fbf1dc;
+  --bar-neutral: #b9bfcc;
+  --bar-dark: #4b5162;
+  --font-display: "Unbounded", "Onest", system-ui, sans-serif;
+  --font-body: "Onest", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1116; --surface: #181b23; --sunk: #12151c; --ink: #eceef4; --muted: #9aa1b2; --line: #2a2f3b;
+    --accent: #7d9bff; --accent-soft: #1f2a4d; --gain: #4cc58e; --gain-soft: #12301f; --loss: #ff7f5c; --loss-soft: #3a1c13;
+    --warn: #e7b04a; --warn-soft: #36290f; --bar-neutral: #4a5163; --bar-dark: #8f96a8; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1116; --surface: #181b23; --sunk: #12151c; --ink: #eceef4; --muted: #9aa1b2; --line: #2a2f3b;
+  --accent: #7d9bff; --accent-soft: #1f2a4d; --gain: #4cc58e; --gain-soft: #12301f; --loss: #ff7f5c; --loss-soft: #3a1c13;
+  --warn: #e7b04a; --warn-soft: #36290f; --bar-neutral: #4a5163; --bar-dark: #8f96a8; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 40px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 22px; }
+header { display: grid; gap: 6px; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(24px, 3.4vw, 36px); line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { color: var(--muted); max-width: 68ch; margin: 0; }
+
+.examples { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.examples span { color: var(--muted); font-size: 13px; margin-right: 4px; }
+.chip {
+  font: inherit; font-size: 13px; font-weight: 500; padding: 7px 13px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); transition: border-color .15s, background .15s;
+}
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.chip:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.layout { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 22px; align-items: start; }
+@media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+.inputs { display: grid; gap: 16px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); }
+@media (max-width: 860px) { .inputs { position: static; } }
+.inputs h2, .card h2 { font-size: 13px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin: 0; font-weight: 600; }
+.field { display: grid; gap: 6px; }
+.field label { font-weight: 500; font-size: 14px; }
+.field .hint { font-size: 12.5px; color: var(--muted); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.unit { position: relative; }
+.unit input { padding-right: 34px; }
+.unit::after { content: attr(data-unit); position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 13px; pointer-events: none; }
+input[type="number"], select {
+  width: 100%; font: inherit; font-family: var(--font-mono); font-size: 15px; color: var(--ink);
+  background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px;
+}
+select { font-family: var(--font-body); }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.applied { font-size: 12.5px; color: var(--accent); font-weight: 500; }
+details.more { border-top: 1px dashed var(--line); padding-top: 12px; }
+details.more summary { cursor: pointer; font-weight: 500; font-size: 14px; }
+details.more[open] summary { margin-bottom: 12px; }
+details.more .grid { display: grid; gap: 12px; }
+
+.results { display: grid; gap: 18px; min-width: 0; }
+.kpis { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 14px; }
+@media (max-width: 620px) { .kpis { grid-template-columns: minmax(0, 1fr); } }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; display: grid; gap: 4px; align-content: start; }
+.kpi .label { font-size: 13px; color: var(--muted); }
+.kpi .value { font-family: var(--font-display); font-weight: 700; font-size: 30px; font-variant-numeric: tabular-nums; line-height: 1.15; white-space: nowrap; overflow: hidden; }
+.kpi .sub { font-size: 12.5px; color: var(--muted); }
+.kpi.main { border-width: 2px; }
+.kpi.main.gain { border-color: var(--gain); background: var(--gain-soft); }
+.kpi.main.loss { border-color: var(--loss); background: var(--loss-soft); }
+.kpi.main.gain .value { color: var(--gain); }
+.kpi.main.loss .value { color: var(--loss); }
+.pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; width: fit-content; }
+.pill.gain { background: var(--gain); color: var(--surface); }
+.pill.loss { background: var(--loss); color: var(--surface); }
+
+.signals { display: grid; gap: 10px; }
+.signal { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; align-items: start; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
+.signal .ic { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; color: var(--surface); }
+.signal.warn { background: var(--warn-soft); border-color: transparent; } .signal.warn .ic { background: var(--warn); }
+.signal.loss { background: var(--loss-soft); border-color: transparent; } .signal.loss .ic { background: var(--loss); }
+.signal.gain { background: var(--gain-soft); border-color: transparent; } .signal.gain .ic { background: var(--gain); }
+.signal.info .ic { background: var(--accent); }
+.signal b { font-weight: 600; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; display: grid; gap: 12px; min-width: 0; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 1020px) { .two { grid-template-columns: minmax(0, 1fr); } }
+
+/* чек */
+.receipt { font-family: var(--font-mono); font-size: 13.5px; font-variant-numeric: tabular-nums; display: grid; gap: 0; }
+.receipt .line { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--line); align-items: baseline; }
+.receipt .line .pct { color: var(--muted); font-size: 12px; min-width: 44px; text-align: right; }
+.receipt .line.total { border-bottom: none; border-top: 2px solid var(--ink); margin-top: 4px; padding-top: 10px; font-weight: 600; font-size: 15px; }
+.receipt .line.head { font-weight: 600; }
+.neg { color: var(--loss); }
+.pos { color: var(--gain); }
+
+svg text { font-family: var(--font-body); }
+.chart-wrap { width: 100%; overflow-x: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+
+footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 6px; max-width: 90ch; }
+footer p { margin: 0; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Юнит-экономика · Ozon FBO · тарифы с 28.08.2026</div>
+    <h1>Сколько продавец заработает с одной продажи</h1>
+    <p class="lede">Выберите категорию, введите цену и закупку — калькулятор вычтет комиссию Ozon, доставку, невыкупы, рекламу, эквайринг и налог и покажет прибыль с единицы товара и цену безубыточности.</p>
+  </header>
+
+  <div class="examples" role="group" aria-label="Примеры из исследования">
+    <span>Примеры из исследования:</span>
+    <button class="chip" data-ex="lipper" aria-pressed="false">Липпер</button>
+    <button class="chip" data-ex="foam" aria-pressed="false">Пенка для умывания</button>
+    <button class="chip" data-ex="steamer" aria-pressed="false">Ручной отпариватель</button>
+    <button class="chip" data-ex="cheap" aria-pressed="false">Дешёвая пенка у порога 300 ₽</button>
+  </div>
+
+  <div class="layout">
+    <form class="panel inputs" id="form" autocomplete="off">
+      <h2>Данные товара</h2>
+      <div class="field">
+        <label for="cat">Категория</label>
+        <select id="cat">
+          <option value="cosm">Косметика для ухода — 52%</option>
+          <option value="cloth">Одежда — 52%</option>
+          <option value="shoes">Обувь — 50%</option>
+          <option value="iron">Утюги и отпариватели — 51%</option>
+          <option value="phone">Смартфоны — 47%</option>
+          <option value="other">Другая категория — ввести вручную</option>
+        </select>
+        <div class="field" id="otherWrap" hidden>
+          <label for="otherRate">Комиссия категории для товаров дороже 300 ₽</label>
+          <div class="unit" data-unit="%"><input type="number" id="otherRate" min="0" max="80" step="0.5" value="47"></div>
+        </div>
+        <div class="applied" id="appliedRate"></div>
+        <div class="hint" id="catHint"></div>
+      </div>
+
+      <div class="field">
+        <label for="price">Цена продавца</label>
+        <div class="unit" data-unit="₽"><input type="number" id="price" min="1" step="1" value="540"></div>
+        <input type="range" id="priceRange" min="10" max="3000" step="1" value="540" aria-label="Цена продавца, ползунок">
+        <div class="hint" id="buyerHint"></div>
+      </div>
+
+      <div class="row2">
+        <div class="field">
+          <label for="buy">Закупка</label>
+          <div class="unit" data-unit="₽"><input type="number" id="buy" min="0" step="1" value="335"></div>
+        </div>
+        <div class="field">
+          <label for="vol">Объём в упаковке</label>
+          <div class="unit" data-unit="л"><input type="number" id="vol" min="0.05" max="10" step="0.05" value="0.3"></div>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="field">
+          <label for="bo">Выкуп</label>
+          <div class="unit" data-unit="%"><input type="number" id="bo" min="5" max="100" step="1" value="90"></div>
+        </div>
+        <div class="field">
+          <label for="ads">Реклама (ДРР)</label>
+          <div class="unit" data-unit="%"><input type="number" id="ads" min="0" max="60" step="0.5" value="10"></div>
+        </div>
+      </div>
+
+      <details class="more">
+        <summary>Налог, эквайринг и импорт</summary>
+        <div class="grid">
+          <div class="row2">
+            <div class="field">
+              <label for="tax">Налог</label>
+              <div class="unit" data-unit="%"><input type="number" id="tax" min="0" max="30" step="0.5" value="6"></div>
+            </div>
+            <div class="field">
+              <label for="acq">Эквайринг</label>
+              <div class="unit" data-unit="%"><input type="number" id="acq" min="0" max="5" step="0.1" value="1.5"></div>
+            </div>
+          </div>
+          <div class="field">
+            <label for="imp">Доставка из Китая и таможня</label>
+            <div class="unit" data-unit="%"><input type="number" id="imp" min="0" max="100" step="1" value="0"></div>
+            <div class="hint">Надбавка к закупке для импортного товара. Для карго ≈ 27%.</div>
+          </div>
+        </div>
+      </details>
+    </form>
+
+    <section class="results" aria-live="polite">
+      <div class="kpis">
+        <div class="kpi main" id="kProfitBox">
+          <div class="label">Прибыль с одной продажи</div>
+          <div class="value" id="kProfit">—</div>
+          <span class="pill" id="kPill">—</span>
+        </div>
+        <div class="kpi">
+          <div class="label">Маржа</div>
+          <div class="value" id="kMargin">—</div>
+          <div class="sub">прибыль ÷ цена продавца</div>
+        </div>
+        <div class="kpi">
+          <div class="label">Цена безубыточности</div>
+          <div class="value" id="kBE">—</div>
+          <div class="sub" id="kBEsub">—</div>
+        </div>
+      </div>
+
+      <div class="signals" id="signals"></div>
+
+      <div class="two">
+        <div class="card">
+          <h2>Куда уходят деньги</h2>
+          <div class="receipt" id="receipt"></div>
+        </div>
+        <div class="card">
+          <h2>Расходы по статьям</h2>
+          <div class="chart-wrap"><svg id="wf" viewBox="0 0 520 300" width="100%" role="img" aria-label="Каскадная диаграмма расходов"></svg></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Прибыль при другой цене</h2>
+        <div class="chart-wrap"><svg id="curve" viewBox="0 0 760 280" width="100%" role="img" aria-label="Прибыль с одной продажи в зависимости от цены"></svg></div>
+        <div class="legend">
+          <span><i style="background: var(--accent)"></i>прибыль с одной продажи</span>
+          <span><i style="background: var(--ink)"></i>текущая цена</span>
+          <span><i style="background: var(--gain)"></i>цена безубыточности</span>
+          <span>Скачки линии — пороги комиссии 100 ₽ и 300 ₽</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <p><b>Как считается.</b> Прибыль = цена продавца − закупка − комиссия Ozon − доставка − невыкупы − реклама − эквайринг − налог. Комиссия: до 100 ₽ — 17%, от 100 до 300 ₽ — 23%, дороже — ставка категории. Доставка: товары до 300 ₽ объёмом до 0,2 л — 17,28 ₽, иначе 46,77 ₽ за первый литр и 10,17 ₽ за каждый следующий; плюс последняя миля 25 ₽. Невыкуп оплачивается дважды: доставка к покупателю и обратно. Покупатель с Ozon Картой платит на 10% меньше (не больше 500 ₽), разницу продавцу возмещает Ozon.</p>
+    <p><b>Источники.</b> Комиссии — таблица ставок Ozon с 28.08.2026 (Adwai); логистика — MPHub, LiteStat; Ozon Карта — Uniseller; цены и закупки примеров — собраны автором 08.11.2026. Расчёт для схемы FBO, без платного хранения, акций и «баллов за скидки».</p>
+    <p>Прототип BI-модели к исследованию «Факторы, влияющие на прибыль продавца на маркетплейсе Ozon», В. Ю. Давыдова, СЗИУ РАНХиГС, 2026.</p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  const CATS = {
+    cosm:  { rate: 52, bo: 90, name: "Косметика для ухода" },
+    cloth: { rate: 52, bo: 45, name: "Одежда" },
+    shoes: { rate: 50, bo: 45, name: "Обувь" },
+    iron:  { rate: 51, bo: 75, name: "Утюги и отпариватели" },
+    phone: { rate: 47, bo: 75, name: "Смартфоны" },
+    other: { rate: null, bo: 75, name: "Другая категория" },
+  };
+  const EX = {
+    lipper:  { cat: "other", other: 47, price: 92.22, buy: 25, vol: 0.1, bo: 90, ads: 10, imp: 0 },
+    foam:    { cat: "cosm", price: 540, buy: 335, vol: 0.3, bo: 90, ads: 10, imp: 0 },
+    steamer: { cat: "iron", price: 2527.78, buy: 1045, vol: 3, bo: 75, ads: 10, imp: 27 },
+    cheap:   { cat: "cosm", price: 299, buy: 85, vol: 0.2, bo: 90, ads: 10, imp: 0 },
+  };
+  const MILE = 25, MICRO = 17.28, L1 = 46.77, LN = 10.17;
+  const $ = id => document.getElementById(id);
+  const ids = ["cat", "otherRate", "price", "buy", "vol", "bo", "ads", "tax", "acq", "imp"];
+  const fmt = (v, d = 0) => (v < 0 ? "−" : "") + Math.abs(v).toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const rub = (v, d = 0) => fmt(v, d) + " ₽";
+  const num = id => { const v = parseFloat(String($(id).value).replace(",", ".")); return isFinite(v) ? v : 0; };
+
+  function params() {
+    const cat = $("cat").value;
+    const catRate = cat === "other" ? num("otherRate") : CATS[cat].rate;
+    return {
+      cat, catRate: catRate / 100, buy: num("buy") * (1 + num("imp") / 100), vol: Math.max(num("vol"), 0.01),
+      bo: Math.min(Math.max(num("bo"), 1), 100) / 100, ads: num("ads") / 100, tax: num("tax") / 100, acq: num("acq") / 100,
+    };
+  }
+  function rateFor(p, P) { return p <= 100 ? 0.17 : p <= 300 ? 0.23 : P.catRate; }
+  function logFor(p, P) {
+    if (p <= 300 && P.vol <= 0.2) return MICRO;
+    return L1 + Math.max(0, Math.ceil(P.vol - 1e-9) - 1) * LN;
+  }
+  function calc(p, P) {
+    const r = rateFor(p, P), lg = logFor(p, P);
+    const items = {
+      buy: P.buy, comm: p * r, deliv: lg + MILE,
+      ret: (2 * lg + MILE) * (1 - P.bo) / P.bo,
+      ads: p * P.ads, taxacq: p * (P.tax + P.acq),
+    };
+    const total = Object.values(items).reduce((a, b) => a + b, 0);
+    return { p, r, lg, items, profit: p - total };
+  }
+  function breakEven(P) {
+    const tiers = [[0, 100], [100, 300], [300, Infinity]];
+    const v = P.ads + P.tax + P.acq;
+    for (const [lo, hi] of tiers) {
+      const probe = Math.min(hi, lo + 1);
+      const r = rateFor(probe, P), lg = logFor(probe, P);
+      const fixed = P.buy + lg + MILE + (2 * lg + MILE) * (1 - P.bo) / P.bo;
+      const den = 1 - r - v;
+      if (den <= 0) continue;
+      const be = fixed / den;
+      if (be > lo && be <= hi) return be;
+      if (be <= lo && calc(lo + 0.01, P).profit >= 0) return lo + 0.01;
+    }
+    return null;
+  }
+  const buyerPrice = p => Math.max(p * 0.9, p - 500);
+
+  function render() {
+    const P = params();
+    const price = Math.max(num("price"), 1);
+    const R = calc(price, P);
+    const be = breakEven(P);
+    $("otherWrap").hidden = P.cat !== "other";
+    const tierTxt = price <= 100 ? "цена до 100 ₽" : price <= 300 ? "цена от 100 до 300 ₽" : "ставка категории";
+    $("appliedRate").textContent = `Применяется комиссия ${fmt(R.r * 100, R.r * 100 % 1 ? 1 : 0)}% (${tierTxt})`;
+    $("buyerHint").textContent = `Покупатель с Ozon Картой увидит ≈ ${rub(buyerPrice(price))}. Скидку по карте оплачивает Ozon.`;
+    $("catHint").textContent = P.cat === "phone"
+      ? "Ставка для смартфонов выросла с 27% до 47% с 28.08.2026 по сторонней таблице комиссий. Перед решением сверьте её в личном кабинете Ozon Seller: у крупных продавцов бывают индивидуальные условия."
+      : P.cat === "other" ? "Ставку своей категории можно найти в личном кабинете Ozon Seller, раздел «Комиссии»."
+      : "Ставка по таблице комиссий Ozon с 28.08.2026. Актуальное значение — в личном кабинете Ozon Seller.";
+
+    // KPI
+    const box = $("kProfitBox"), pill = $("kPill");
+    const good = R.profit >= 0;
+    box.classList.toggle("gain", good); box.classList.toggle("loss", !good);
+    $("kProfit").textContent = rub(R.profit);
+    pill.className = "pill " + (good ? "gain" : "loss");
+    pill.textContent = good ? "товар прибыльный" : "товар убыточный";
+    $("kMargin").textContent = fmt(R.profit / price * 100, 1) + "%";
+    if (be) {
+      $("kBE").textContent = rub(be);
+      $("kBEsub").textContent = `для покупателя с Ozon Картой ≈ ${rub(buyerPrice(be))}`;
+    } else {
+      $("kBE").textContent = "не достигается";
+      $("kBEsub").textContent = "комиссия, реклама и налог забирают всю цену";
+    }
+
+    // Сигналы
+    const sig = [];
+    const add = (kind, ic, html) => sig.push(`<div class="signal ${kind}"><div class="ic" aria-hidden="true">${ic}</div><div>${html}</div></div>`);
+    if (price > 300 && price <= 400 && P.catRate > 0.23) {
+      const alt = calc(299, P);
+      if (alt.profit > R.profit) add("warn", "!", `<b>Порог 300 ₽.</b> При цене 299 ₽ комиссия ${fmt(alt.r * 100)}% вместо ${fmt(R.r * 100)}%, и прибыль составит ${rub(alt.profit)} вместо ${rub(R.profit)}.`);
+    }
+    if (price > 100 && price <= 130) {
+      const alt = calc(99, P);
+      if (alt.profit > R.profit) add("warn", "!", `<b>Порог 100 ₽.</b> При цене 99 ₽ комиссия 17% вместо 23%, прибыль составит ${rub(alt.profit)} вместо ${rub(R.profit)}.`);
+    }
+    if (R.profit < 0) {
+      add("loss", "−", `<b>Каждая продажа приносит убыток ${rub(-R.profit)}.</b> Рост продаж только увеличит потери. ${be ? `Выйти в ноль можно при цене продавца от ${rub(be)}.` : ""}`);
+    } else {
+      add("gain", "+", `<b>Товар прибыльный:</b> ${rub(R.profit)} с каждой продажи. Запас до цены безубыточности — ${be ? rub(price - be) : "—"}.`);
+    }
+    if ((R.items.buy + R.items.comm) > price) add("loss", "−", `<b>Закупка и комиссия вместе больше цены</b> (${fmt((R.items.buy + R.items.comm) / price * 100)}%). Помогут только более высокая цена или более дешёвая закупка.`);
+    const logShare = (R.items.deliv + R.items.ret) / price;
+    if (logShare > 0.3) add("warn", "!", `<b>Доставка и невыкупы — ${fmt(logShare * 100)}% цены.</b> Ozon берёт за доставку фиксированную сумму, поэтому дешёвый товар выгоднее продавать набором.`);
+    if (P.ads > 0.10) add("warn", "!", `<b>Реклама ${fmt(P.ads * 100, 1)}% выручки.</b> При ДРР выше 10% прибыль быстро уходит в минус.`);
+    if (P.bo < 0.6) add("warn", "!", `<b>Низкий выкуп ${fmt(P.bo * 100)}%.</b> Невыкупы стоят ${rub(R.items.ret)} на каждую проданную единицу. Точная размерная сетка и честные фото повышают выкуп.`);
+    $("signals").innerHTML = sig.join("");
+    fitValues();
+
+    // Чек
+    const rows = [
+      ["Закупка" + (num("imp") ? " с доставкой из Китая" : ""), R.items.buy],
+      [`Комиссия Ozon (${fmt(R.r * 100)}%)`, R.items.comm],
+      ["Доставка", R.items.deliv],
+      [`Невыкупы (выкуп ${fmt(P.bo * 100)}%)`, R.items.ret],
+      [`Реклама (${fmt(P.ads * 100, P.ads * 100 % 1 ? 1 : 0)}%)`, R.items.ads],
+      ["Налог и эквайринг", R.items.taxacq],
+    ];
+    let h = `<div class="line head"><span>Цена продавца</span><span class="pct"></span><span>${rub(price, 2)}</span></div>`;
+    for (const [n, v] of rows) h += `<div class="line"><span>${n}</span><span class="pct">${fmt(v / price * 100)}%</span><span class="neg">−${fmt(v, 2)} ₽</span></div>`;
+    h += `<div class="line total"><span>Остаётся продавцу</span><span class="pct">${fmt(R.profit / price * 100)}%</span><span class="${R.profit < 0 ? "neg" : "pos"}">${rub(R.profit, 2)}</span></div>`;
+    $("receipt").innerHTML = h;
+
+    drawWaterfall(price, rows, R.profit);
+    drawCurve(price, P, be, R.profit);
+  }
+
+  function fitValues() {
+    document.querySelectorAll(".kpi .value").forEach(v => {
+      let size = 30; v.style.fontSize = size + "px";
+      while (v.scrollWidth > v.clientWidth && size > 16) { size -= 1; v.style.fontSize = size + "px"; }
+    });
+  }
+  window.addEventListener("resize", fitValues);
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  function el(tag, attrs, text) {
+    const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function drawWaterfall(price, rows, profit) {
+    const svg = $("wf"); svg.innerHTML = "";
+    const W = 460, labelW = 150, padR = 52, top = 4, rowH = 32;
+    const steps = [["Цена продавца", price, "start"], ...rows.map(r => [r[0].replace(/ \(.*\)/, ""), -r[1], "cost"]), ["Прибыль", profit, "end"]];
+    let run = 0; const segs = [];
+    for (const [n, v, kind] of steps) {
+      if (kind === "start") { segs.push({ n, a: 0, b: v, kind }); run = v; }
+      else if (kind === "end") segs.push({ n, a: 0, b: v, kind });
+      else { segs.push({ n, a: run, b: run + v, kind }); run += v; }
+    }
+    const minX = Math.min(0, ...segs.map(s => Math.min(s.a, s.b))), maxX = Math.max(...segs.map(s => Math.max(s.a, s.b)));
+    const x = v => labelW + (v - minX) / (maxX - minX || 1) * (W - labelW - padR);
+    const H = top + segs.length * rowH + 8;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.appendChild(el("line", { x1: x(0), x2: x(0), y1: 0, y2: H - 4, stroke: css("--line"), "stroke-width": 1 }));
+    segs.forEach((s, i) => {
+      const y = top + i * rowH;
+      const color = s.kind === "start" ? css("--accent") : s.kind === "end" ? (s.b < 0 ? css("--loss") : css("--gain")) : (i <= 2 ? css("--bar-dark") : css("--bar-neutral"));
+      const x0 = x(Math.min(s.a, s.b)), w = Math.max(2, Math.abs(x(s.b) - x(s.a)));
+      svg.appendChild(el("text", { x: labelW - 10, y: y + rowH / 2 + 4, "text-anchor": "end", "font-size": 13.5, fill: css("--ink") }, s.n));
+      svg.appendChild(el("rect", { x: x0, y: y + 7, width: w, height: rowH - 14, rx: 3, fill: color }));
+      const val = s.kind === "cost" ? s.b - s.a : s.b;
+      svg.appendChild(el("text", { x: x0 + w + 6, y: y + rowH / 2 + 4, "font-size": 13, fill: css("--muted"), "font-family": "JetBrains Mono, monospace" }, fmt(val)));
+    });
+  }
+
+  function drawCurve(price, P, be, profitNow) {
+    const svg = $("curve"); svg.innerHTML = "";
+    const W = 760, H = 280, l = 64, r = 18, t = 16, b = 40;
+    const hiP = Math.max(price * 2.2, (be || 0) * 1.25, 120);
+    const loP = Math.max(5, Math.min(price, be || price) * 0.35);
+    const N = 360, pts = [];
+    for (let i = 0; i <= N; i++) { const p = loP + (hiP - loP) * i / N; pts.push([p, calc(p, P).profit]); }
+    [100, 300].forEach(th => { if (th > loP && th < hiP) { pts.push([th, calc(th, P).profit]); pts.push([th + 0.001, calc(th + 0.001, P).profit]); } });
+    pts.sort((a, b) => a[0] - b[0]);
+    let yMin = Math.min(0, ...pts.map(p => p[1])), yMax = Math.max(0, ...pts.map(p => p[1]));
+    const padY = (yMax - yMin) * 0.08 || 10; yMin -= padY; yMax += padY;
+    const X = p => l + (p - loP) / (hiP - loP) * (W - l - r);
+    const Y = v => t + (yMax - v) / (yMax - yMin) * (H - t - b);
+    const grid = css("--line"), muted = css("--muted");
+    // оси и сетка
+    const ticks = niceTicks(yMin, yMax, 5);
+    ticks.forEach(v => {
+      svg.appendChild(el("line", { x1: l, x2: W - r, y1: Y(v), y2: Y(v), stroke: grid, "stroke-width": v === 0 ? 0 : 1 }));
+      svg.appendChild(el("text", { x: l - 8, y: Y(v) + 4, "text-anchor": "end", "font-size": 11.5, fill: muted }, fmt(v)));
+    });
+    niceTicks(loP, hiP, 6).forEach(p => {
+      if (p < loP || p > hiP) return;
+      svg.appendChild(el("text", { x: X(p), y: H - b + 18, "text-anchor": "middle", "font-size": 11.5, fill: muted }, fmt(p)));
+    });
+    svg.appendChild(el("text", { x: W - r, y: H - 4, "text-anchor": "end", "font-size": 11.5, fill: muted }, "цена продавца, ₽"));
+    svg.appendChild(el("text", { x: 4, y: t + 2, "font-size": 11.5, fill: muted, "dominant-baseline": "hanging" }, "₽"));
+    svg.appendChild(el("line", { x1: l, x2: W - r, y1: Y(0), y2: Y(0), stroke: css("--ink"), "stroke-width": 1.2 }));
+    // пороги
+    [100, 300].forEach(th => {
+      if (th > loP && th < hiP) {
+        svg.appendChild(el("line", { x1: X(th), x2: X(th), y1: t, y2: H - b, stroke: muted, "stroke-dasharray": "3 4", "stroke-width": 1 }));
+        svg.appendChild(el("text", { x: X(th) + 4, y: t + 10, "font-size": 11, fill: muted }, `порог ${th} ₽`));
+      }
+    });
+    // линия по сегментам (разрыв на порогах)
+    let d = "", prev = null;
+    pts.forEach(([p, v]) => {
+      const jump = prev && ((prev[0] <= 100 && p > 100) || (prev[0] <= 300 && p > 300));
+      d += (d === "" || jump ? "M" : "L") + X(p).toFixed(1) + " " + Y(v).toFixed(1) + " ";
+      prev = [p, v];
+    });
+    svg.appendChild(el("path", { d, fill: "none", stroke: css("--accent"), "stroke-width": 2.5, "stroke-linejoin": "round" }));
+    // точки
+    if (be && be >= loP && be <= hiP) {
+      svg.appendChild(el("circle", { cx: X(be), cy: Y(0), r: 6, fill: css("--gain"), stroke: css("--surface"), "stroke-width": 2 }));
+      svg.appendChild(el("text", { x: X(be), y: Y(0) + (profitNow < 0 ? -12 : 20), "text-anchor": "middle", "font-size": 12, "font-weight": 600, fill: css("--gain") }, rub(be)));
+    }
+    svg.appendChild(el("circle", { cx: X(price), cy: Y(profitNow), r: 6, fill: css("--ink"), stroke: css("--surface"), "stroke-width": 2 }));
+    const lx = X(price), anchor = lx > W * 0.75 ? "end" : "start", off = anchor === "end" ? -10 : 10;
+    svg.appendChild(el("text", { x: lx + off, y: Y(profitNow) + (profitNow < 0 ? 18 : -10), "text-anchor": anchor, "font-size": 12, "font-weight": 600, fill: css("--ink") }, `${rub(price)} → ${rub(profitNow)}`));
+  }
+  function niceTicks(a, b, n) {
+    const span = b - a; if (span <= 0) return [a];
+    const step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+    const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => span / s <= n) || 10 * mag;
+    const out = []; for (let v = Math.ceil(a / step) * step; v <= b + 1e-9; v += step) out.push(Math.round(v * 100) / 100);
+    return out;
+  }
+
+  // события
+  function syncRange() {
+    const p = Math.max(num("price"), 1), rg = $("priceRange");
+    const mx = Math.max(1000, Math.ceil(p * 3 / 100) * 100);
+    if (+rg.max < p || +rg.max > mx * 2) rg.max = mx;
+    rg.value = Math.round(p);
+  }
+  ids.forEach(id => $(id).addEventListener("input", () => {
+    if (id === "cat") { const c = CATS[$("cat").value]; $("bo").value = c.bo; }
+    if (id === "price") syncRange();
+    clearPressed(); render();
+  }));
+  $("priceRange").addEventListener("input", e => { $("price").value = e.target.value; clearPressed(); render(); });
+  $("form").addEventListener("submit", e => e.preventDefault());
+  function clearPressed() { document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", "false")); }
+  document.querySelectorAll(".chip").forEach(btn => btn.addEventListener("click", () => {
+    const e = EX[btn.dataset.ex];
+    $("cat").value = e.cat; if (e.other) $("otherRate").value = e.other;
+    $("price").value = e.price; $("buy").value = e.buy; $("vol").value = e.vol; $("bo").value = e.bo; $("ads").value = e.ads; $("imp").value = e.imp;
+    $("tax").value = 6; $("acq").value = 1.5;
+    $("priceRange").max = Math.max(1000, Math.ceil(e.price * 3 / 100) * 100);
+    syncRange(); render();
+    clearPressed(); btn.setAttribute("aria-pressed", "true");
+  }));
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  if (mq.addEventListener) mq.addEventListener("change", render);
+  new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  document.querySelector('.chip[data-ex="foam"]').click();
+})();
+</script>
+
+</body>
+</html>
